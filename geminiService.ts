@@ -1,22 +1,19 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Safe API Key retrieval
-const getApiKey = () => {
-  try {
-    return process.env.API_KEY || (window as any).process?.env?.API_KEY || '';
-  } catch {
-    return '';
-  }
-};
+// Initialize Gemini API client strictly according to guidelines using process.env.API_KEY directly
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const apiKey = getApiKey();
-// We only initialize if apiKey exists to avoid immediate crash, though system rules assume it's there.
-const ai = new GoogleGenAI({ apiKey: apiKey || 'temporary-placeholder' });
+export interface PulseResult {
+  text: string;
+  links: Array<{ title: string; uri: string }>;
+}
 
-export const getStreamerPulse = async (streamerName: string) => {
-  if (!apiKey) return "AI services are currently offline. Please check API_KEY configuration.";
-  
+/**
+ * Fetches the latest "pulse" on a streamer using Gemini 3 Flash with Google Search grounding.
+ * Extracts grounding chunks to comply with source listing requirements.
+ */
+export const getStreamerPulse = async (streamerName: string): Promise<PulseResult> => {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -26,16 +23,33 @@ export const getStreamerPulse = async (streamerName: string) => {
         systemInstruction: "You are a professional streamer industry analyst. Provide a 3-sentence high-energy brief. Include current rumors and verified locations if available."
       }
     });
-    return response.text;
+
+    // Extracting ground chunks for required URL citations in search-grounded results
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const links = chunks
+      .map((chunk: any) => ({
+        title: chunk.web?.title || 'Source',
+        uri: chunk.web?.uri
+      }))
+      .filter((link: any) => link.uri);
+
+    return {
+      text: response.text || "No pulse report available.",
+      links: links as Array<{ title: string; uri: string }>
+    };
   } catch (error) {
     console.error("Gemini Pulse Error:", error);
-    return "Pulse check unavailable for this streamer at the moment.";
+    return { 
+      text: "Pulse check unavailable for this streamer at the moment.", 
+      links: [] 
+    };
   }
 };
 
-export const analyzeStreamerTrends = async (query: string) => {
-  if (!apiKey) return "AI insight restricted.";
-
+/**
+ * Analyzes streamer trends based on community query.
+ */
+export const analyzeStreamerTrends = async (query: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -44,7 +58,8 @@ export const analyzeStreamerTrends = async (query: string) => {
         systemInstruction: "Keep it under 200 characters. Sound like a savvy community moderator."
       }
     });
-    return response.text;
+    // Correctly accessing .text property as defined in GenerateContentResponse
+    return response.text || "Unable to fetch AI insights.";
   } catch (error) {
     console.error("Gemini Trend Error:", error);
     return "Unable to fetch AI insights.";
