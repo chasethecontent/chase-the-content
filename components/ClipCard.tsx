@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Clip, User } from '../types';
 import Comments from './Comments';
@@ -21,9 +20,10 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
     if (!url) return null;
 
     // Kick Clips: https://kick.com/user/clips/clip_ID
-    const kickMatch = url.match(/kick\.com\/.*\/clips\/(clip_[a-zA-Z0-9]+)/);
+    const kickMatch = url.match(/kick\.com\/[^\/]+\/clips\/(clip_[a-zA-Z0-9]+)/);
     if (kickMatch) {
-      return `https://player.kick.com/clips/${kickMatch[1]}`;
+      // Use the standard video/embed path for Kick clips which is the most reliable endpoint
+      return `https://player.kick.com/video/embed/${kickMatch[1]}`;
     }
 
     // YouTube: https://www.youtube.com/watch?v=ID or https://youtu.be/ID
@@ -36,7 +36,9 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
     const twitchMatch = url.match(/clips\.twitch\.tv\/([^&?/\s]+)/) || url.match(/twitch\.tv\/.*\/clip\/([^&?/\s]+)/);
     if (twitchMatch) {
       const parent = window.location.hostname;
-      return `https://clips.twitch.tv/embed?clip=${twitchMatch[1]}&parent=${parent}&autoplay=true`;
+      // Handle localhost development or production domain
+      const finalParent = parent === 'localhost' ? 'localhost' : parent;
+      return `https://clips.twitch.tv/embed?clip=${twitchMatch[1]}&parent=${finalParent}&autoplay=true`;
     }
 
     return null;
