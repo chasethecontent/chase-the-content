@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Comment, User } from '../types';
 import { supabase } from '../lib/supabase';
@@ -17,33 +16,54 @@ const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected })
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!dbConnected || !isUUID(clipId)) return;
-
-    const fetchComments = async () => {
-      const { data, error } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('clip_id', clipId)
-        .order('created_at', { ascending: true });
+    const fetchAllComments = async () => {
+      let dbData: Comment[] = [];
       
-      if (!error && data) setComments(data);
+      // 1. Fetch from Local Storage Fallback
+      const localKey = `sp_comments_${clipId}`;
+      const localCommentsRaw = localStorage.getItem(localKey);
+      const localComments: Comment[] = localCommentsRaw ? JSON.parse(localCommentsRaw) : [];
+
+      // 2. Fetch from Database if connected and valid
+      if (dbConnected && isUUID(clipId)) {
+        const { data, error } = await supabase
+          .from('comments')
+          .select('*')
+          .eq('clip_id', clipId)
+          .order('created_at', { ascending: true });
+        
+        if (!error && data) dbData = data;
+      }
+
+      // Merge and sort
+      const merged = [...dbData, ...localComments].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      
+      // Deduplicate by ID
+      const unique = Array.from(new Map(merged.map(c => [c.id, c])).values());
+      setComments(unique);
     };
 
-    fetchComments();
+    fetchAllComments();
 
-    const subscription = supabase
-      .channel(`comments-${clipId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments', filter: `clip_id=eq.${clipId}` }, 
-        payload => {
-          const incoming = payload.new as Comment;
-          setComments(prev => {
-            if (prev.some(c => c.id === incoming.id)) return prev;
-            return [...prev, incoming];
-          });
-        }
-      ).subscribe();
+    // 3. Setup Realtime for Database
+    let subscription: any = null;
+    if (dbConnected && isUUID(clipId)) {
+      subscription = supabase
+        .channel(`comments-${clipId}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments', filter: `clip_id=eq.${clipId}` }, 
+          payload => {
+            const incoming = payload.new as Comment;
+            setComments(prev => {
+              if (prev.some(c => c.id === incoming.id)) return prev;
+              return [...prev, incoming];
+            });
+          }
+        ).subscribe();
+    }
 
-    return () => { subscription.unsubscribe(); };
+    return () => { if (subscription) subscription.unsubscribe(); };
   }, [clipId, dbConnected]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -51,39 +71,47 @@ const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected })
     if (!newComment.trim()) return;
     setLoading(true);
 
+    const tempId = 'c-' + Math.random().toString(36).substring(7);
     const commentData: any = {
+      id: tempId,
       clip_id: clipId,
       username: currentUser.username,
-      text: newComment
+      text: newComment,
+      created_at: new Date().toISOString()
     };
 
-    // Use actual user ID if authenticated
-    if (isUUID(currentUser.id)) {
-      commentData.user_id = currentUser.id;
-    }
+    // Optimistically update UI
+    setComments(prev => [...prev, commentData]);
 
-    const tempId = 'temp-' + Math.random().toString();
-    const optimisticComment: Comment = { 
-      ...commentData, 
-      id: tempId, 
-      created_at: new Date().toISOString() 
-    } as Comment;
-    
-    setComments(prev => [...prev, optimisticComment]);
-
-    // Only save to DB if it's a real persistent clip (UUID)
+    // Persistence logic
     if (dbConnected && isUUID(clipId)) {
-      const { data, error } = await supabase.from('comments').insert([commentData]).select();
+      const dbPayload = {
+        clip_id: clipId,
+        username: currentUser.username,
+        text: newComment,
+        user_id: isUUID(currentUser.id) ? currentUser.id : null
+      };
+
+      const { data, error } = await supabase.from('comments').insert([dbPayload]).select();
       if (error) {
-        console.error("Comment Save Error:", error);
-        setComments(prev => prev.filter(c => c.id !== tempId));
+        console.error("Comment DB Error, falling back to local:", error);
+        saveToLocal(commentData);
       } else if (data && data.length > 0) {
-        setComments(prev => prev.map(c => c.id === tempId ? { ...c, id: data[0].id } : c));
+        setComments(prev => prev.map(c => c.id === tempId ? data[0] : c));
       }
+    } else {
+      saveToLocal(commentData);
     }
 
     setNewComment('');
     setLoading(false);
+  };
+
+  const saveToLocal = (comment: Comment) => {
+    const localKey = `sp_comments_${clipId}`;
+    const existingRaw = localStorage.getItem(localKey);
+    const existing = existingRaw ? JSON.parse(existingRaw) : [];
+    localStorage.setItem(localKey, JSON.stringify([...existing, comment]));
   };
 
   return (

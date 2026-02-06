@@ -44,14 +44,18 @@ const App: React.FC = () => {
   const fetchData = useCallback(async (checkConfig: boolean) => {
     try {
       let currentStreamers = [...INITIAL_STREAMERS];
-      let fetchedClips: Clip[] = [];
+      let dbClips: Clip[] = [];
+
+      // 1. Load Local Storage Fallback Clips
+      const localClipsRaw = localStorage.getItem('sp_local_clips');
+      const localClips: Clip[] = localClipsRaw ? JSON.parse(localClipsRaw) : [];
 
       if (checkConfig) {
         const { data: clipData, error: clipError } = await supabase.from('clips').select('*').order('created_at', { ascending: false });
         const { data: streamerData, error: streamerError } = await supabase.from('streamers').select('*');
         
         if (clipData && !clipError) {
-          fetchedClips = clipData.map((c: any) => ({
+          dbClips = clipData.map((c: any) => ({
             ...c,
             streamerName: c.streamer_name,
             videoUrl: c.video_url
@@ -66,7 +70,15 @@ const App: React.FC = () => {
         }
       }
 
-      setClips([...fetchedClips, ...INITIAL_CLIPS]);
+      // Merge all sources: Database -> LocalStorage -> Hardcoded Initial
+      // Use a Map to deduplicate by ID if necessary
+      const combinedClips = [...dbClips, ...localClips, ...INITIAL_CLIPS];
+      const uniqueClipsMap = new Map();
+      combinedClips.forEach(c => {
+        if (!uniqueClipsMap.has(c.id)) uniqueClipsMap.set(c.id, c);
+      });
+
+      setClips(Array.from(uniqueClipsMap.values()));
 
       const twitchNames = currentStreamers
         .filter(s => s.platform === 'Twitch')
@@ -87,7 +99,10 @@ const App: React.FC = () => {
       setStreamers(updatedStreamers as Streamer[]);
     } catch (err: any) {
       console.error("Fetch Data Error:", err);
-      setClips(INITIAL_CLIPS);
+      // Fallback to initial + local if everything fails
+      const localClipsRaw = localStorage.getItem('sp_local_clips');
+      const localClips = localClipsRaw ? JSON.parse(localClipsRaw) : [];
+      setClips([...localClips, ...INITIAL_CLIPS]);
     } finally {
       setLoading(false);
     }
@@ -164,7 +179,7 @@ const App: React.FC = () => {
   };
 
   const handleSubmitClip = async (data: any) => {
-    const tempId = 'temp-' + Math.random().toString(36).substring(7);
+    const tempId = 'clip-' + Math.random().toString(36).substring(2, 9);
     const newClip: Clip = {
       id: tempId,
       streamerName: data.streamer_name || 'Unknown',
@@ -176,9 +191,10 @@ const App: React.FC = () => {
       tags: ['COMMUNITY', 'VIRAL']
     };
 
-    // Optimistically add to the feed immediately
+    // Optimistically add to UI
     setClips(prev => [newClip, ...prev]);
-    
+
+    // Persistent storage logic
     if (dbConnected) {
       const { data: inserted, error } = await supabase.from('clips').insert([{
         streamer_name: data.streamer_name,
@@ -191,20 +207,28 @@ const App: React.FC = () => {
       }]).select();
 
       if (error) {
-        console.error("Submit Error:", error);
+        console.error("DB Submission Error, falling back to local storage:", error);
+        saveToLocalStorage(newClip);
       } else if (inserted && inserted.length > 0) {
-        // Replace temp clip with real one from DB
         setClips(prev => prev.map(c => c.id === tempId ? {
           ...inserted[0],
           streamerName: inserted[0].streamer_name,
           videoUrl: inserted[0].video_url
         } : c));
       }
+    } else {
+      saveToLocalStorage(newClip);
     }
 
     addActivity(`${user.username} shared a new moment`, 'submission');
     setView('feed');
     setUser(prev => ({ ...prev, points: prev.points + 100 }));
+  };
+
+  const saveToLocalStorage = (clip: Clip) => {
+    const existingRaw = localStorage.getItem('sp_local_clips');
+    const existing = existingRaw ? JSON.parse(existingRaw) : [];
+    localStorage.setItem('sp_local_clips', JSON.stringify([clip, ...existing]));
   };
 
   const renderContent = () => {
