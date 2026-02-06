@@ -20,10 +20,10 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
     if (!url) return null;
 
     // Kick Clips: https://kick.com/username/clips/clip_ID
-    // Using the official kick.com/video/embed/ endpoint as it is more stable than player.kick.com for clips
-    const kickMatch = url.match(/kick\.com\/[^\/]+\/clips\/(clip_[a-zA-Z0-9]+)/i);
+    // The "misconfigured" error is usually solved by player.kick.com + no-referrer + specific allow attributes.
+    const kickMatch = url.match(/clips\/(clip_[a-zA-Z0-9]+)/i);
     if (kickMatch) {
-      return `https://kick.com/video/embed/${kickMatch[1]}`;
+      return `https://player.kick.com/video/embed/${kickMatch[1]}`;
     }
 
     // YouTube: https://www.youtube.com/watch?v=ID or https://youtu.be/ID
@@ -74,10 +74,10 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
               <iframe
                 src={embedUrl}
                 className="w-full h-full border-0"
-                // Adding 'autoplay' and 'fullscreen' specifically as Kick and others check for these permissions
+                // Crucial for Kick: must have allow="autoplay; fullscreen" and no-referrer policy
                 allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write"
                 allowFullScreen
-                referrerPolicy="no-referrer-when-downgrade"
+                referrerPolicy="no-referrer"
               ></iframe>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
