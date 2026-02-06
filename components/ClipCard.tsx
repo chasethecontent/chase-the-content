@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Clip, User } from '../types';
 import Comments from './Comments';
 
@@ -13,27 +13,85 @@ interface ClipCardProps {
 
 const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, dbConnected }) => {
   const [showComments, setShowComments] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Extract embed URL based on platform
+  const embedUrl = useMemo(() => {
+    const url = clip.video_url || clip.videoUrl || '';
+    if (!url) return null;
+
+    // Kick Clips: https://kick.com/user/clips/clip_ID
+    const kickMatch = url.match(/kick\.com\/.*\/clips\/(clip_[a-zA-Z0-9]+)/);
+    if (kickMatch) {
+      return `https://player.kick.com/clips/${kickMatch[1]}`;
+    }
+
+    // YouTube: https://www.youtube.com/watch?v=ID or https://youtu.be/ID
+    const ytMatch = url.match(/(?:v=|be\/|embed\/)([^&?/\s]+)/);
+    if (ytMatch && (url.includes('youtube.com') || url.includes('youtu.be'))) {
+      return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`;
+    }
+
+    // Twitch Clips: https://clips.twitch.tv/Slug or https://www.twitch.tv/user/clip/Slug
+    const twitchMatch = url.match(/clips\.twitch\.tv\/([^&?/\s]+)/) || url.match(/twitch\.tv\/.*\/clip\/([^&?/\s]+)/);
+    if (twitchMatch) {
+      const parent = window.location.hostname;
+      return `https://clips.twitch.tv/embed?clip=${twitchMatch[1]}&parent=${parent}&autoplay=true`;
+    }
+
+    return null;
+  }, [clip.video_url, clip.videoUrl]);
 
   return (
     <div className="bg-[#151921] rounded-2xl overflow-hidden border border-white/5 group hover:border-indigo-500/50 transition-all shadow-xl shadow-black/20">
-      <div className="relative aspect-video overflow-hidden">
-        <img 
-          src={clip.thumbnail} 
-          alt={clip.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-        <div className="absolute bottom-3 left-3 flex items-center gap-2">
-          <div className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-[10px] font-bold">
-            CH
+      <div className="relative aspect-video overflow-hidden bg-black">
+        {!isPlaying ? (
+          <>
+            <img 
+              src={clip.thumbnail} 
+              alt={clip.title}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+            <div className="absolute bottom-3 left-3 flex items-center gap-2">
+              <div className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-[10px] font-bold">
+                CH
+              </div>
+              <span className="text-xs font-bold text-white drop-shadow-md">{clip.streamerName}</span>
+            </div>
+            <button 
+              onClick={() => setIsPlaying(true)}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 bg-indigo-600/90 backdrop-blur-sm rounded-full flex items-center justify-center text-white opacity-90 group-hover:opacity-100 group-hover:scale-110 transition-all shadow-2xl shadow-indigo-500/40"
+            >
+              <svg className="w-8 h-8 fill-current ml-1" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </button>
+          </>
+        ) : (
+          <div className="w-full h-full relative">
+            {embedUrl ? (
+              <iframe
+                src={embedUrl}
+                className="w-full h-full border-0"
+                allowFullScreen
+                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+              ></iframe>
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
+                Embed not supported for this URL
+              </div>
+            )}
+            <button 
+              onClick={() => setIsPlaying(false)}
+              className="absolute top-2 right-2 p-1 bg-black/60 rounded-full text-white/70 hover:text-white transition-colors z-20"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <span className="text-xs font-bold text-white drop-shadow-md">{clip.streamerName}</span>
-        </div>
-        <button className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
-          <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        </button>
+        )}
       </div>
       
       <div className="p-4">
