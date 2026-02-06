@@ -1,0 +1,7 @@
+{
+  "name": "StreamPulse - Streamer Community Hub",
+  "description": "A high-performance aggregator for streamers featuring a live tracking map, community voting, and a viral clip feed powered by AI analysis.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
