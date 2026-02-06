@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Streamer, Clip, User, View } from './types';
 import { INITIAL_STREAMERS, INITIAL_CLIPS } from './constants';
@@ -17,7 +16,6 @@ import { getLiveStreams } from './lib/twitch';
 // Helper to check if string is a valid UUID
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-// App component completed to resolve ReactNode return requirement for FC type
 const App: React.FC = () => {
   const [view, setView] = useState<View>('feed');
   const [streamers, setStreamers] = useState<Streamer[]>(INITIAL_STREAMERS);
@@ -49,10 +47,10 @@ const App: React.FC = () => {
       let fetchedClips: Clip[] = [];
 
       if (checkConfig) {
-        const { data: clipData } = await supabase.from('clips').select('*').order('created_at', { ascending: false });
-        const { data: streamerData } = await supabase.from('streamers').select('*');
+        const { data: clipData, error: clipError } = await supabase.from('clips').select('*').order('created_at', { ascending: false });
+        const { data: streamerData, error: streamerError } = await supabase.from('streamers').select('*');
         
-        if (clipData) {
+        if (clipData && !clipError) {
           fetchedClips = clipData.map((c: any) => ({
             ...c,
             streamerName: c.streamer_name,
@@ -60,7 +58,7 @@ const App: React.FC = () => {
           }));
         }
 
-        if (streamerData && streamerData.length > 0) {
+        if (streamerData && streamerData.length > 0 && !streamerError) {
           currentStreamers = streamerData.map((s: any) => ({
             ...s,
             location: [s.location_lat, s.location_lng]
@@ -166,18 +164,47 @@ const App: React.FC = () => {
   };
 
   const handleSubmitClip = async (data: any) => {
+    const tempId = 'temp-' + Math.random().toString(36).substring(7);
+    const newClip: Clip = {
+      id: tempId,
+      streamerName: data.streamer_name || 'Unknown',
+      title: data.title || 'Untitled Clip',
+      videoUrl: data.video_url,
+      thumbnail: `https://picsum.photos/seed/${tempId}/400/225`,
+      votes: 0,
+      timestamp: 'Just now',
+      tags: ['COMMUNITY', 'VIRAL']
+    };
+
+    // Optimistic Update
+    setClips(prev => [newClip, ...prev]);
+    
     if (dbConnected) {
-      const { error } = await supabase.from('clips').insert([{
-        ...data,
-        user_id: user.id,
+      const { data: inserted, error } = await supabase.from('clips').insert([{
+        streamer_name: data.streamer_name,
+        title: data.title,
+        video_url: data.video_url,
+        thumbnail: newClip.thumbnail,
+        user_id: isUUID(user.id) ? user.id : null,
         votes: 0,
         tags: ['COMMUNITY', 'VIRAL']
-      }]);
-      if (error) console.error("Submit Error:", error);
+      }]).select();
+
+      if (error) {
+        console.error("Submit Error:", error);
+      } else if (inserted && inserted.length > 0) {
+        // Replace temp clip with real one
+        setClips(prev => prev.map(c => c.id === tempId ? {
+          ...inserted[0],
+          streamerName: inserted[0].streamer_name,
+          videoUrl: inserted[0].video_url
+        } : c));
+      }
     }
+
     addActivity(`${user.username} shared a new moment`, 'submission');
     setView('feed');
-    fetchData(dbConnected);
+    setUser(prev => ({ ...prev, points: prev.points + 100 }));
   };
 
   const renderContent = () => {
@@ -235,6 +262,17 @@ const App: React.FC = () => {
         return null;
     }
   };
+
+  if (loading && view !== 'deployment') {
+    return (
+      <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <h2 className="text-white font-black italic uppercase tracking-tighter animate-pulse">Chasing Content...</h2>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-200 selection:bg-indigo-500/30">
