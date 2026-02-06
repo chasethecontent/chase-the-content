@@ -20,11 +20,11 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
     if (!url) return null;
 
     // Kick Clips: https://kick.com/username/clips/clip_ID
-    // Robust regex to capture the ID after /clips/ regardless of what's before it
-    const kickMatch = url.match(/kick\.com\/[^\/]+\/clips\/(clip_[a-zA-Z0-9_]+)/i);
+    // The "misconfigured" error often happens due to missing allow attributes or incorrect endpoints.
+    // The most reliable endpoint provided by Kick's share feature is /video/embed/ID
+    const kickMatch = url.match(/kick\.com\/[^\/]+\/clips\/(clip_[a-zA-Z0-9]+)/i);
     if (kickMatch) {
-      // The standard and most reliable endpoint for Kick clips is /clips/ID
-      return `https://player.kick.com/clips/${kickMatch[1]}`;
+      return `https://player.kick.com/video/embed/${kickMatch[1]}?autoplay=true&muted=false`;
     }
 
     // YouTube: https://www.youtube.com/watch?v=ID or https://youtu.be/ID
@@ -75,9 +75,10 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
               <iframe
                 src={embedUrl}
                 className="w-full h-full border-0"
+                // Essential: Kick and Twitch require specific 'allow' attributes to initialize their players properly.
+                allow="autoplay; fullscreen; picture-in-picture; encrypted-media; web-share"
                 allowFullScreen
-                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                referrerPolicy="strict-origin-when-cross-origin"
+                referrerPolicy="no-referrer-when-downgrade"
               ></iframe>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
