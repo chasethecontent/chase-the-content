@@ -20,11 +20,10 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
     if (!url) return null;
 
     // Kick Clips: https://kick.com/username/clips/clip_ID
-    // The "misconfigured" error often happens due to missing allow attributes or incorrect endpoints.
-    // The most reliable endpoint provided by Kick's share feature is /video/embed/ID
+    // Using the official kick.com/video/embed/ endpoint as it is more stable than player.kick.com for clips
     const kickMatch = url.match(/kick\.com\/[^\/]+\/clips\/(clip_[a-zA-Z0-9]+)/i);
     if (kickMatch) {
-      return `https://player.kick.com/video/embed/${kickMatch[1]}?autoplay=true&muted=false`;
+      return `https://kick.com/video/embed/${kickMatch[1]}`;
     }
 
     // YouTube: https://www.youtube.com/watch?v=ID or https://youtu.be/ID
@@ -75,8 +74,8 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
               <iframe
                 src={embedUrl}
                 className="w-full h-full border-0"
-                // Essential: Kick and Twitch require specific 'allow' attributes to initialize their players properly.
-                allow="autoplay; fullscreen; picture-in-picture; encrypted-media; web-share"
+                // Adding 'autoplay' and 'fullscreen' specifically as Kick and others check for these permissions
+                allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write"
                 allowFullScreen
                 referrerPolicy="no-referrer-when-downgrade"
               ></iframe>
