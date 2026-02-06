@@ -1,12 +1,11 @@
+// Robust shim for process.env to prevent ReferenceErrors in browser environments during module evaluation
+if (typeof window !== 'undefined' && !window.process) {
+  (window as any).process = { env: {} };
+}
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-
-// Global shim for process.env to prevent ReferenceErrors in browser environments
-if (typeof window !== 'undefined' && !window.process) {
-  (window as any).process = { env: {} };
-}
 
 // Global error handler for early boot errors to provide user feedback
 window.onerror = (message, source, lineno, colno, error) => {

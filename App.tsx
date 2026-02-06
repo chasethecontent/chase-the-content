@@ -176,7 +176,7 @@ const App: React.FC = () => {
       tags: ['COMMUNITY', 'VIRAL']
     };
 
-    // Optimistic Update
+    // Optimistically add to the feed immediately
     setClips(prev => [newClip, ...prev]);
     
     if (dbConnected) {
@@ -193,7 +193,7 @@ const App: React.FC = () => {
       if (error) {
         console.error("Submit Error:", error);
       } else if (inserted && inserted.length > 0) {
-        // Replace temp clip with real one
+        // Replace temp clip with real one from DB
         setClips(prev => prev.map(c => c.id === tempId ? {
           ...inserted[0],
           streamerName: inserted[0].streamer_name,
