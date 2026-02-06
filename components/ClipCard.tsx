@@ -14,27 +14,29 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
   const [showComments, setShowComments] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Extract embed URL based on platform
   const embedUrl = useMemo(() => {
     const url = clip.video_url || clip.videoUrl || '';
     if (!url) return null;
 
-    // Kick Clips: https://kick.com/username/clips/clip_ID
-    // The "misconfigured" error is usually solved by player.kick.com + no-referrer + specific allow attributes.
+    // ✅ KICK CLIPS FIX
+    // Example: https://kick.com/user/clips/clip_ABC123
     const kickMatch = url.match(/clips\/(clip_[a-zA-Z0-9]+)/i);
     if (kickMatch) {
-      return `https://player.kick.com/video/embed/${kickMatch[1]}`;
+      return `https://player.kick.com/clip/${kickMatch[1]}`;
     }
 
-    // YouTube: https://www.youtube.com/watch?v=ID or https://youtu.be/ID
+    // YouTube
     const ytMatch = url.match(/(?:v=|be\/|embed\/)([^&?/\s]+)/);
     if (ytMatch && (url.includes('youtube.com') || url.includes('youtu.be'))) {
       return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&modestbranding=1&rel=0`;
     }
 
-    // Twitch Clips: https://clips.twitch.tv/Slug or https://www.twitch.tv/user/clip/Slug
-    const twitchMatch = url.match(/clips\.twitch\.tv\/([^&?/\s]+)/) || url.match(/twitch\.tv\/.*\/clip\/([^&?/\s]+)/);
-    if (twitchMatch) {
+    // Twitch Clips
+    const twitchMatch =
+      url.match(/clips\.twitch\.tv\/([^&?/\s]+)/) ||
+      url.match(/twitch\.tv\/.*\/clip\/([^&?/\s]+)/);
+
+    if (twitchMatch && typeof window !== 'undefined') {
       const parent = window.location.hostname;
       return `https://clips.twitch.tv/embed?clip=${twitchMatch[1]}&parent=${parent}&autoplay=true`;
     }
@@ -47,8 +49,8 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
       <div className="relative aspect-video overflow-hidden bg-black">
         {!isPlaying ? (
           <>
-            <img 
-              src={clip.thumbnail} 
+            <img
+              src={clip.thumbnail}
               alt={clip.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
@@ -57,9 +59,11 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
               <div className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-[10px] font-bold">
                 CH
               </div>
-              <span className="text-xs font-bold text-white drop-shadow-md">{clip.streamerName}</span>
+              <span className="text-xs font-bold text-white drop-shadow-md">
+                {clip.streamerName}
+              </span>
             </div>
-            <button 
+            <button
               onClick={() => setIsPlaying(true)}
               className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 bg-indigo-600/90 backdrop-blur-sm rounded-full flex items-center justify-center text-white opacity-90 group-hover:opacity-100 group-hover:scale-110 transition-all shadow-2xl shadow-indigo-500/40"
             >
@@ -74,20 +78,26 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
               <iframe
                 src={embedUrl}
                 className="w-full h-full border-0"
-                // Crucial for Kick: must have allow="autoplay; fullscreen" and no-referrer policy
-                allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write"
+                allow="autoplay; fullscreen; picture-in-picture"
                 allowFullScreen
-                referrerPolicy="no-referrer"
-              ></iframe>
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
                 <svg className="w-8 h-8 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
                 </svg>
-                <span className="text-[10px] uppercase font-black tracking-widest italic">Embed Format Unsupported</span>
+                <span className="text-[10px] uppercase font-black tracking-widest italic">
+                  Embed Format Unsupported
+                </span>
               </div>
             )}
-            <button 
+            <button
               onClick={() => setIsPlaying(false)}
               className="absolute top-2 right-2 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white/70 hover:text-white transition-all z-20 hover:scale-110"
             >
@@ -98,48 +108,62 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, onVote, voted, currentUser, d
           </div>
         )}
       </div>
-      
+
       <div className="p-4">
         <div className="flex justify-between items-start gap-4 mb-2">
           <h3 className="font-semibold text-white leading-snug line-clamp-2 italic uppercase text-sm tracking-tight">
             {clip.title}
           </h3>
           <div className="flex flex-col gap-2">
-            <button 
+            <button
               onClick={() => onVote(clip.id)}
-              className={`flex flex-col items-center gap-1 min-w-[44px] p-2 rounded-xl transition-all ${voted ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700 border border-transparent'}`}
+              className={`flex flex-col items-center gap-1 min-w-[44px] p-2 rounded-xl transition-all ${
+                voted
+                  ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                  : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700 border border-transparent'
+              }`}
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 4l-8 8h16l-8-8z" />
               </svg>
-              <span className="text-[10px] font-black tracking-tighter">{clip.votes + (voted ? 1 : 0)}</span>
+              <span className="text-[10px] font-black tracking-tighter">
+                {clip.votes + (voted ? 1 : 0)}
+              </span>
             </button>
-            <button 
+
+            <button
               onClick={() => setShowComments(!showComments)}
-              className={`flex flex-col items-center gap-1 min-w-[44px] p-2 rounded-xl transition-all ${showComments ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700 border border-transparent'}`}
+              className={`flex flex-col items-center gap-1 min-w-[44px] p-2 rounded-xl transition-all ${
+                showComments
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700 border border-transparent'
+              }`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
               </svg>
               <span className="text-[8px] font-black uppercase tracking-tighter">Chat</span>
             </button>
           </div>
         </div>
-        
+
         <div className="flex flex-wrap gap-2 mt-4">
           {clip.tags.map(tag => (
-            <span key={tag} className="px-2 py-0.5 bg-slate-800/50 rounded text-[9px] font-black text-slate-500 uppercase tracking-widest border border-white/5">
+            <span
+              key={tag}
+              className="px-2 py-0.5 bg-slate-800/50 rounded text-[9px] font-black text-slate-500 uppercase tracking-widest border border-white/5"
+            >
               #{tag}
             </span>
           ))}
         </div>
 
         {showComments && (
-          <Comments 
-            clipId={clip.id} 
-            currentUser={currentUser} 
-            dbConnected={dbConnected} 
-          />
+          <Comments clipId={clip.id} currentUser={currentUser} dbConnected={dbConnected} />
         )}
       </div>
     </div>
