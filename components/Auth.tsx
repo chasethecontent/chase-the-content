@@ -32,7 +32,7 @@ const Auth: React.FC<AuthProps> = ({ onComplete }) => {
           }
         });
         if (error) throw error;
-        alert("Verification email sent! Please check your inbox.");
+        // Proceed directly without asking for email confirmation
       }
       onComplete();
     } catch (err: any) {
