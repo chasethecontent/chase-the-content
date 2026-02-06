@@ -22,7 +22,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentView, setView, userPoints }) => 
             </svg>
           </div>
           <span className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent tracking-tight">
-            StreamPulse
+            Chase The Content
           </span>
         </div>
 
@@ -32,6 +32,12 @@ const Navbar: React.FC<NavbarProps> = ({ currentView, setView, userPoints }) => 
             className={`transition-colors ${currentView === 'feed' ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
           >
             Clip Feed
+          </button>
+          <button 
+            onClick={() => setView('list')}
+            className={`transition-colors ${currentView === 'list' ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+          >
+            Streamers
           </button>
           <button 
             onClick={() => setView('map')}

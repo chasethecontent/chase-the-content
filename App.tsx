@@ -9,6 +9,7 @@ import SubmitForm from './components/SubmitForm';
 import DeploymentGuide from './components/DeploymentGuide';
 import SearchPulse from './components/SearchPulse';
 import ActivityFeed from './components/ActivityFeed';
+import StreamerList from './components/StreamerList';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { getLiveStreams } from './lib/twitch';
 
@@ -77,7 +78,8 @@ const App: React.FC = () => {
           return {
             ...s,
             status: liveInfo ? 'online' : 'offline',
-            category: liveInfo ? liveInfo.game_name : s.category
+            category: liveInfo ? liveInfo.game_name : s.category,
+            viewerCount: liveInfo ? liveInfo.viewer_count : 0
           };
         });
 
@@ -161,6 +163,7 @@ const App: React.FC = () => {
         )}
 
         {view === 'map' && <div className="px-6 pb-20"><MapView streamers={streamers} onReportLocation={handleReportLocation} /></div>}
+        {view === 'list' && <div className="px-6 pb-20"><StreamerList streamers={streamers} /></div>}
         {view === 'leaderboard' && (
           <div className="pt-32 px-6 max-w-4xl mx-auto pb-20">
              <h1 className="text-5xl font-black text-white mb-8 italic uppercase tracking-tighter">Verified Content Kings</h1>

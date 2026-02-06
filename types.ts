@@ -10,6 +10,7 @@ export interface Streamer {
   votes: number;
   avatar: string;
   bio: string;
+  viewerCount?: number;
 }
 
 export interface Clip {
@@ -31,4 +32,4 @@ export interface User {
   votedIds: string[];
 }
 
-export type View = 'feed' | 'map' | 'leaderboard' | 'submit' | 'deployment';
+export type View = 'feed' | 'map' | 'leaderboard' | 'submit' | 'deployment' | 'list';
