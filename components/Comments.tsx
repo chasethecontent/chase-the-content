@@ -9,13 +9,15 @@ interface CommentsProps {
   dbConnected: boolean;
 }
 
+const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
 const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!dbConnected) return;
+    if (!dbConnected || !isUUID(clipId)) return;
 
     const fetchComments = async () => {
       const { data, error } = await supabase
@@ -35,7 +37,6 @@ const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected })
         payload => {
           const incoming = payload.new as Comment;
           setComments(prev => {
-            // Avoid duplicates from optimistic updates
             if (prev.some(c => c.id === incoming.id)) return prev;
             return [...prev, incoming];
           });
@@ -50,15 +51,18 @@ const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected })
     if (!newComment.trim()) return;
     setLoading(true);
 
-    const commentData = {
+    const commentData: any = {
       clip_id: clipId,
-      user_id: currentUser.id,
       username: currentUser.username,
       text: newComment
     };
 
-    // Optimistic local state update
-    const tempId = Math.random().toString();
+    // Use actual user ID if authenticated
+    if (isUUID(currentUser.id)) {
+      commentData.user_id = currentUser.id;
+    }
+
+    const tempId = 'temp-' + Math.random().toString();
     const optimisticComment: Comment = { 
       ...commentData, 
       id: tempId, 
@@ -67,14 +71,13 @@ const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected })
     
     setComments(prev => [...prev, optimisticComment]);
 
-    if (dbConnected) {
+    // Only save to DB if it's a real persistent clip (UUID)
+    if (dbConnected && isUUID(clipId)) {
       const { data, error } = await supabase.from('comments').insert([commentData]).select();
       if (error) {
-        console.error(error);
-        // Rollback optimistic update on error
+        console.error("Comment Save Error:", error);
         setComments(prev => prev.filter(c => c.id !== tempId));
-      } else if (data) {
-        // Swap tempId with actual DB ID to prevent duplicates when real-time fires
+      } else if (data && data.length > 0) {
         setComments(prev => prev.map(c => c.id === tempId ? { ...c, id: data[0].id } : c));
       }
     }

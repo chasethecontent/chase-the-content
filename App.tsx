@@ -14,6 +14,9 @@ import Auth from './components/Auth';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { getLiveStreams } from './lib/twitch';
 
+// Helper to check if string is a valid UUID
+const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
 const App: React.FC = () => {
   const [view, setView] = useState<View>('feed');
   const [streamers, setStreamers] = useState<Streamer[]>(INITIAL_STREAMERS);
@@ -24,7 +27,6 @@ const App: React.FC = () => {
   const [activities, setActivities] = useState<any[]>([]);
   const [session, setSession] = useState<any>(null);
 
-  // User state synchronized with Auth
   const [user, setUser] = useState<User>(() => {
     try {
       const saved = localStorage.getItem('sp_user');
@@ -45,7 +47,6 @@ const App: React.FC = () => {
     const checkConfig = isSupabaseConfigured();
     setDbConnected(checkConfig);
 
-    // Listen for Auth changes
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
@@ -82,17 +83,17 @@ const App: React.FC = () => {
       try {
         let currentStreamers = [...INITIAL_STREAMERS];
         if (checkConfig) {
-          const { data: clipData } = await supabase.from('clips').select('*').order('votes', { ascending: false });
+          const { data: clipData } = await supabase.from('clips').select('*').order('created_at', { ascending: false });
           const { data: streamerData } = await supabase.from('streamers').select('*');
           
-          if (clipData && clipData.length > 0) {
-            // Map snake_case from DB to camelCase for UI
+          if (clipData) {
             const mappedClips = clipData.map((c: any) => ({
               ...c,
               streamerName: c.streamer_name,
               videoUrl: c.video_url
             }));
-            setClips(mappedClips);
+            // Merge DB clips with initial ones if DB is empty, otherwise show DB
+            setClips(mappedClips.length > 0 ? mappedClips : INITIAL_CLIPS);
           } else {
             setClips(INITIAL_CLIPS);
           }
@@ -148,12 +149,11 @@ const App: React.FC = () => {
   const handleVote = async (id: string) => {
     if (user.votedIds.includes(id)) return;
     
-    // Optimistic Update
     setClips(prev => prev.map(c => c.id === id ? { ...c, votes: (c.votes || 0) + 1 } : c));
     setUser(prev => ({ ...prev, votedIds: [...prev.votedIds, id], points: prev.points + 10 }));
     addActivity(`${user.username} voted for a viral moment`, 'vote');
 
-    if (dbConnected) {
+    if (dbConnected && isUUID(id)) {
       try {
         const { data } = await supabase.from('clips').select('votes').eq('id', id).single();
         await supabase.from('clips').update({ votes: (data?.votes || 0) + 1 }).eq('id', id);
@@ -170,36 +170,41 @@ const App: React.FC = () => {
   };
 
   const handleSubmission = async (data: any) => {
-    const newClipObj = { 
+    const newClipObj: any = { 
       streamer_name: data.streamer_name || data.streamer || 'Unknown',
       title: data.title,
       video_url: data.video_url,
       thumbnail: `https://picsum.photos/seed/${Math.random()}/400/225`,
       votes: 0, 
-      tags: ['NEW'],
-      user_id: user.id
+      tags: ['NEW']
     };
+
+    // Only add user_id if it's a real UUID from Auth
+    if (isUUID(user.id)) {
+      newClipObj.user_id = user.id;
+    }
 
     if (dbConnected) {
       const { data: inserted, error } = await supabase.from('clips').insert([newClipObj]).select();
-      if (!error && inserted) {
+      if (!error && inserted && inserted.length > 0) {
         const mapped = {
           ...inserted[0],
           streamerName: inserted[0].streamer_name,
           videoUrl: inserted[0].video_url
         };
-        setClips([mapped as any, ...clips]);
+        setClips(prev => [mapped as any, ...prev]);
       } else {
         console.error("Submission Error:", error);
       }
     } else {
-      setClips([{ 
+      const demoClip = { 
         ...newClipObj, 
         id: Date.now().toString(), 
         streamerName: newClipObj.streamer_name,
         videoUrl: newClipObj.video_url,
         timestamp: 'just now' 
-      } as any, ...clips]);
+      };
+      setClips(prev => [demoClip as any, ...prev]);
     }
     
     setView('feed');
