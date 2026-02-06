@@ -20,12 +20,21 @@ const App: React.FC = () => {
   const [initError, setInitError] = useState<string | null>(null);
   const [activities, setActivities] = useState<any[]>([]);
 
+  // Safe User Initialization
   const [user, setUser] = useState<User>(() => {
-    const saved = localStorage.getItem('sp_user');
-    return saved ? JSON.parse(saved) : {
-      id: 'u1',
+    try {
+      const saved = localStorage.getItem('sp_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && parsed.id) return parsed;
+      }
+    } catch (e) {
+      console.warn("Corrupted user session cleared.");
+    }
+    return {
+      id: 'u' + Math.random().toString(36).substr(2, 9),
       username: 'Viewer' + Math.floor(Math.random() * 1000),
-      points: 125,
+      points: 100,
       votedIds: []
     };
   });
@@ -38,16 +47,23 @@ const App: React.FC = () => {
       setLoading(true);
       try {
         if (!checkConfig) {
+          console.log("Supabase not configured. Running in Demo Mode.");
           setClips(INITIAL_CLIPS);
           setLoading(false);
           return;
         }
 
-        const { data: clipData } = await supabase.from('clips').select('*').order('votes', { ascending: false });
-        const { data: streamerData } = await supabase.from('streamers').select('*');
+        const { data: clipData, error: clipError } = await supabase.from('clips').select('*').order('votes', { ascending: false });
+        if (clipError) throw clipError;
+
+        const { data: streamerData, error: streamerError } = await supabase.from('streamers').select('*');
+        if (streamerError) throw streamerError;
           
-        if (clipData && clipData.length > 0) setClips(clipData as any);
-        else setClips(INITIAL_CLIPS);
+        if (clipData && clipData.length > 0) {
+          setClips(clipData as any);
+        } else {
+          setClips(INITIAL_CLIPS);
+        }
 
         if (streamerData && streamerData.length > 0) {
           const formatted: Streamer[] = streamerData.map((s: any) => ({
@@ -57,7 +73,8 @@ const App: React.FC = () => {
           setStreamers(formatted);
         }
       } catch (err: any) {
-        setInitError(err.message || "Failed to connect to database");
+        console.error("Database initialization failed:", err);
+        setInitError(err.message || "Failed to sync with Supabase cloud");
         setClips(INITIAL_CLIPS);
       } finally {
         setLoading(false);
@@ -67,6 +84,11 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
+  // Save user data whenever it changes
+  useEffect(() => {
+    localStorage.setItem('sp_user', JSON.stringify(user));
+  }, [user]);
+
   const addActivity = (text: string, type: 'vote' | 'sighting' | 'submission') => {
     setActivities(prev => [{ id: Date.now(), text, type, time: 'Just now' }, ...prev].slice(0, 5));
   };
@@ -75,27 +97,35 @@ const App: React.FC = () => {
     if (user.votedIds.includes(id)) return;
     const clip = clips.find(c => c.id === id);
     
+    // Optimistic Update
     setClips(prev => prev.map(c => c.id === id ? { ...c, votes: (c.votes || 0) + 1 } : c));
     setUser(prev => ({ ...prev, votedIds: [...prev.votedIds, id], points: prev.points + 10 }));
-    addActivity(`${user.username} voted for "${clip?.title}"`, 'vote');
+    addActivity(`${user.username} voted for "${clip?.title || 'a viral moment'}"`, 'vote');
 
     if (dbConnected) {
-      const { data } = await supabase.from('clips').select('votes').eq('id', id).single();
-      await supabase.from('clips').update({ votes: (data?.votes || 0) + 1 }).eq('id', id);
+      try {
+        const { data } = await supabase.from('clips').select('votes').eq('id', id).single();
+        await supabase.from('clips').update({ votes: (data?.votes || 0) + 1 }).eq('id', id);
+      } catch (e) {
+        console.error("Vote sync failed:", e);
+      }
     }
   };
 
   const handleReportLocation = async (streamer: Streamer, newLoc: [number, number]) => {
-    // Update local state
     setStreamers(prev => prev.map(s => s.id === streamer.id ? { ...s, location: newLoc } : s));
     setUser(prev => ({ ...prev, points: prev.points + 50 }));
     addActivity(`${user.username} spotted ${streamer.name} at new coordinates!`, 'sighting');
 
     if (dbConnected) {
-      await supabase.from('streamers').update({ 
-        location_lat: newLoc[0], 
-        location_lng: newLoc[1] 
-      }).eq('id', streamer.id);
+      try {
+        await supabase.from('streamers').update({ 
+          location_lat: newLoc[0], 
+          location_lng: newLoc[1] 
+        }).eq('id', streamer.id);
+      } catch (e) {
+        console.error("Location update sync failed:", e);
+      }
     }
   };
 
@@ -109,16 +139,22 @@ const App: React.FC = () => {
       tags: ['NEW', 'COMMUNITY']
     };
 
-    if (dbConnected) {
-      const { data: inserted } = await supabase.from('clips').insert([newClipObj]).select();
-      if (inserted) setClips([inserted[0] as any, ...clips]);
-    } else {
-      setClips([{ ...newClipObj, id: Date.now().toString(), timestamp: 'just now' } as any, ...clips]);
+    try {
+      if (dbConnected) {
+        const { data: inserted, error } = await supabase.from('clips').insert([newClipObj]).select();
+        if (error) throw error;
+        if (inserted) setClips([inserted[0] as any, ...clips]);
+      } else {
+        setClips([{ ...newClipObj, id: Date.now().toString(), timestamp: 'just now' } as any, ...clips]);
+      }
+      
+      setView('feed');
+      setUser(prev => ({ ...prev, points: prev.points + 100 }));
+      addActivity(`${user.username} submitted a new viral moment!`, 'submission');
+    } catch (e) {
+      console.error("Submission failed:", e);
+      alert("Failed to submit clip. Please check your connection.");
     }
-    
-    setView('feed');
-    setUser(prev => ({ ...prev, points: prev.points + 100 }));
-    addActivity(`${user.username} submitted a new viral moment!`, 'submission');
   };
 
   if (loading && view !== 'deployment') {
@@ -127,6 +163,7 @@ const App: React.FC = () => {
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4 shadow-[0_0_20px_rgba(99,102,241,0.4)]"></div>
           <h2 className="text-white font-black italic uppercase tracking-tighter animate-pulse">Initializing Pulse...</h2>
+          <p className="text-slate-500 text-[10px] mt-4 uppercase tracking-[0.2em] font-bold">Syncing with encrypted streamers network</p>
         </div>
       </div>
     );
@@ -142,8 +179,8 @@ const App: React.FC = () => {
             <div className="bg-red-500/10 border border-red-500/20 backdrop-blur-md p-4 rounded-2xl flex items-center gap-4 text-red-400 shadow-2xl">
               <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               <div className="text-xs font-bold leading-tight">
-                DB ERROR: {initError}. 
-                <button onClick={() => setView('deployment')} className="underline ml-1 hover:text-white">Run SQL fix.</button>
+                CONFIG ISSUE: {initError}. 
+                <button onClick={() => setView('deployment')} className="underline ml-1 hover:text-white">Review guide.</button>
               </div>
             </div>
           </div>
