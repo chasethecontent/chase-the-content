@@ -10,6 +10,7 @@ import DeploymentGuide from './components/DeploymentGuide';
 import SearchPulse from './components/SearchPulse';
 import ActivityFeed from './components/ActivityFeed';
 import StreamerList from './components/StreamerList';
+import Auth from './components/Auth';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { getLiveStreams } from './lib/twitch';
 
@@ -21,7 +22,9 @@ const App: React.FC = () => {
   const [dbConnected, setDbConnected] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [activities, setActivities] = useState<any[]>([]);
+  const [session, setSession] = useState<any>(null);
 
+  // User state synchronized with Auth
   const [user, setUser] = useState<User>(() => {
     try {
       const saved = localStorage.getItem('sp_user');
@@ -29,9 +32,7 @@ const App: React.FC = () => {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object' && parsed.id) return parsed;
       }
-    } catch (e) {
-      console.warn("Corrupted user session cleared.");
-    }
+    } catch (e) {}
     return {
       id: 'u' + Math.random().toString(36).substr(2, 9),
       username: 'Chaser' + Math.floor(Math.random() * 1000),
@@ -44,10 +45,42 @@ const App: React.FC = () => {
     const checkConfig = isSupabaseConfigured();
     setDbConnected(checkConfig);
 
+    // Listen for Auth changes
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        setUser(prev => ({
+          ...prev,
+          id: session.user.id,
+          username: session.user.user_metadata?.username || session.user.email?.split('@')[0],
+          email: session.user.email
+        }));
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session?.user) {
+        setUser(prev => ({
+          ...prev,
+          id: session.user.id,
+          username: session.user.user_metadata?.username || session.user.email?.split('@')[0],
+          email: session.user.email
+        }));
+      } else {
+        // Reset to guest if logged out
+        setUser({
+          id: 'u' + Math.random().toString(36).substr(2, 9),
+          username: 'GuestChaser',
+          points: 0,
+          votedIds: []
+        });
+      }
+    });
+
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. Fetch from Database
         let currentStreamers = [...INITIAL_STREAMERS];
         if (checkConfig) {
           const { data: clipData } = await supabase.from('clips').select('*').order('votes', { ascending: false });
@@ -66,7 +99,6 @@ const App: React.FC = () => {
           setClips(INITIAL_CLIPS);
         }
 
-        // 2. Fetch Live Twitch Statuses
         const twitchNames = currentStreamers
           .filter(s => s.platform === 'Twitch')
           .map(s => s.name);
@@ -86,7 +118,6 @@ const App: React.FC = () => {
         setStreamers(updatedStreamers as Streamer[]);
 
       } catch (err: any) {
-        console.error("Initialization failed:", err);
         setInitError(err.message || "Failed to sync data");
         setClips(INITIAL_CLIPS);
       } finally {
@@ -95,6 +126,7 @@ const App: React.FC = () => {
     };
 
     fetchData();
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -110,6 +142,11 @@ const App: React.FC = () => {
     setClips(prev => prev.map(c => c.id === id ? { ...c, votes: (c.votes || 0) + 1 } : c));
     setUser(prev => ({ ...prev, votedIds: [...prev.votedIds, id], points: prev.points + 10 }));
     addActivity(`${user.username} voted for a viral moment`, 'vote');
+
+    if (dbConnected) {
+      const { data } = await supabase.from('clips').select('votes').eq('id', id).single();
+      await supabase.from('clips').update({ votes: (data?.votes || 0) + 1 }).eq('id', id);
+    }
   };
 
   const handleReportLocation = async (streamer: Streamer, newLoc: [number, number]) => {
@@ -119,18 +156,36 @@ const App: React.FC = () => {
   };
 
   const handleSubmission = async (data: any) => {
-    const newClip = { ...data, id: Date.now().toString(), votes: 0, timestamp: 'just now', tags: ['NEW'] };
-    setClips([newClip, ...clips]);
+    const newClipObj = { 
+      ...data, 
+      streamer_name: data.streamer || 'Unknown',
+      votes: 0, 
+      tags: ['NEW'],
+      user_id: user.id
+    };
+
+    if (dbConnected) {
+      const { data: inserted, error } = await supabase.from('clips').insert([newClipObj]).select();
+      if (!error && inserted) setClips([inserted[0] as any, ...clips]);
+    } else {
+      setClips([{ ...newClipObj, id: Date.now().toString(), timestamp: 'just now' } as any, ...clips]);
+    }
+    
     setView('feed');
     setUser(prev => ({ ...prev, points: prev.points + 100 }));
-    addActivity(`${user.username} submitted a new viral moment!`, 'submission');
+    addActivity(`${user.username} shared a moment!`, 'submission');
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setView('feed');
   };
 
   if (loading && view !== 'deployment') {
     return (
       <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4 shadow-[0_0_20px_rgba(99,102,241,0.4)]"></div>
+          <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <h2 className="text-white font-black italic uppercase tracking-tighter animate-pulse">Chasing Content...</h2>
         </div>
       </div>
@@ -139,9 +194,18 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-200">
-      <Navbar currentView={view} setView={setView} userPoints={user.points} />
+      <Navbar 
+        currentView={view} 
+        setView={setView} 
+        userPoints={user.points} 
+        isLoggedIn={!!session} 
+        username={user.username}
+        onLogout={handleLogout}
+      />
 
       <main className="container mx-auto">
+        {view === 'auth' && <Auth onComplete={() => setView('feed')} />}
+        
         {view === 'feed' && (
           <div className="pt-32 px-6 pb-20 grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-12">
             <div>
@@ -152,7 +216,14 @@ const App: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {clips.map(clip => (
-                  <ClipCard key={clip.id} clip={clip} onVote={handleVote} voted={user.votedIds.includes(clip.id)} />
+                  <ClipCard 
+                    key={clip.id} 
+                    clip={clip} 
+                    onVote={handleVote} 
+                    voted={user.votedIds.includes(clip.id)} 
+                    currentUser={user}
+                    dbConnected={dbConnected}
+                  />
                 ))}
               </div>
             </div>
@@ -184,7 +255,7 @@ const App: React.FC = () => {
              </div>
           </div>
         )}
-        {view === 'submit' && <SubmitForm onSubmit={handleSubmission} />}
+        {view === 'submit' && <SubmitForm onSubmit={handleSubmission} user={user} isLoggedIn={!!session} />}
         {view === 'deployment' && <DeploymentGuide />}
       </main>
     </div>

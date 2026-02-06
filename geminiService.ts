@@ -1,26 +1,11 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const getApiKey = () => {
-  try {
-    // In Vite/Vercel, we use import.meta.env. For API_KEY specifically, 
-    // it might be injected as process.env.API_KEY by some platforms.
-    return (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-           (import.meta as any).env?.VITE_API_KEY ||
-           (window as any).process?.env?.API_KEY || 
-           "";
-  } catch {
-    return "";
-  }
-};
-
-// Only initialize if we have a key to avoid crashes
-const apiKey = getApiKey();
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+// Initialize the Gemini API client using the environment variable directly
+// We assume process.env.API_KEY is pre-configured in the execution environment
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const getStreamerPulse = async (streamerName: string) => {
-  if (!ai) return "Pulse check unavailable: AI configuration missing.";
-  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -38,8 +23,6 @@ export const getStreamerPulse = async (streamerName: string) => {
 };
 
 export const analyzeStreamerTrends = async (query: string) => {
-  if (!ai) return "Unable to fetch AI insights: AI configuration missing.";
-  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -50,6 +33,7 @@ export const analyzeStreamerTrends = async (query: string) => {
     });
     return response.text;
   } catch (error) {
+    console.error("Gemini Trend Error:", error);
     return "Unable to fetch AI insights.";
   }
 };
