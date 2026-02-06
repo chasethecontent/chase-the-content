@@ -1,11 +1,22 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize the Gemini API client using the environment variable directly
-// We assume process.env.API_KEY is pre-configured in the execution environment
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe API Key retrieval
+const getApiKey = () => {
+  try {
+    return process.env.API_KEY || (window as any).process?.env?.API_KEY || '';
+  } catch {
+    return '';
+  }
+};
+
+const apiKey = getApiKey();
+// We only initialize if apiKey exists to avoid immediate crash, though system rules assume it's there.
+const ai = new GoogleGenAI({ apiKey: apiKey || 'temporary-placeholder' });
 
 export const getStreamerPulse = async (streamerName: string) => {
+  if (!apiKey) return "AI services are currently offline. Please check API_KEY configuration.";
+  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -23,6 +34,8 @@ export const getStreamerPulse = async (streamerName: string) => {
 };
 
 export const analyzeStreamerTrends = async (query: string) => {
+  if (!apiKey) return "AI insight restricted.";
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',

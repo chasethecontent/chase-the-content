@@ -5,9 +5,14 @@
  */
 
 const getEnv = (key: string): string => {
+  const viteKey = `VITE_${key}`;
   try {
-    const viteKey = `VITE_${key}`;
-    return (import.meta as any).env?.[viteKey] || (window as any).process?.env?.[key] || '';
+    return (
+      (import.meta as any).env?.[viteKey] || 
+      (window as any).process?.env?.[viteKey] || 
+      (window as any).process?.env?.[key] || 
+      ''
+    );
   } catch {
     return '';
   }
@@ -18,9 +23,6 @@ const CLIENT_SECRET = getEnv('TWITCH_CLIENT_SECRET');
 
 let accessToken: string | null = null;
 
-/**
- * Gets an App Access Token using Client Credentials flow
- */
 async function getAccessToken() {
   if (accessToken) return accessToken;
   if (!CLIENT_ID || !CLIENT_SECRET) return null;
@@ -38,9 +40,6 @@ async function getAccessToken() {
   }
 }
 
-/**
- * Fetches live stream data for a list of usernames
- */
 export async function getLiveStreams(usernames: string[]) {
   const token = await getAccessToken();
   if (!token || !CLIENT_ID) return [];
@@ -61,9 +60,6 @@ export async function getLiveStreams(usernames: string[]) {
   }
 }
 
-/**
- * Fetches user profile data (avatar, bio)
- */
 export async function getTwitchUsers(usernames: string[]) {
   const token = await getAccessToken();
   if (!token || !CLIENT_ID) return [];
