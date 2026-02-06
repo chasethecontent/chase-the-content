@@ -68,7 +68,6 @@ const App: React.FC = () => {
           email: session.user.email
         }));
       } else {
-        // Reset to guest if logged out
         setUser({
           id: 'u' + Math.random().toString(36).substr(2, 9),
           username: 'GuestChaser',
@@ -86,8 +85,17 @@ const App: React.FC = () => {
           const { data: clipData } = await supabase.from('clips').select('*').order('votes', { ascending: false });
           const { data: streamerData } = await supabase.from('streamers').select('*');
           
-          if (clipData && clipData.length > 0) setClips(clipData as any);
-          else setClips(INITIAL_CLIPS);
+          if (clipData && clipData.length > 0) {
+            // Map snake_case from DB to camelCase for UI
+            const mappedClips = clipData.map((c: any) => ({
+              ...c,
+              streamerName: c.streamer_name,
+              videoUrl: c.video_url
+            }));
+            setClips(mappedClips);
+          } else {
+            setClips(INITIAL_CLIPS);
+          }
 
           if (streamerData && streamerData.length > 0) {
             currentStreamers = streamerData.map((s: any) => ({
@@ -139,13 +147,19 @@ const App: React.FC = () => {
 
   const handleVote = async (id: string) => {
     if (user.votedIds.includes(id)) return;
+    
+    // Optimistic Update
     setClips(prev => prev.map(c => c.id === id ? { ...c, votes: (c.votes || 0) + 1 } : c));
     setUser(prev => ({ ...prev, votedIds: [...prev.votedIds, id], points: prev.points + 10 }));
     addActivity(`${user.username} voted for a viral moment`, 'vote');
 
     if (dbConnected) {
-      const { data } = await supabase.from('clips').select('votes').eq('id', id).single();
-      await supabase.from('clips').update({ votes: (data?.votes || 0) + 1 }).eq('id', id);
+      try {
+        const { data } = await supabase.from('clips').select('votes').eq('id', id).single();
+        await supabase.from('clips').update({ votes: (data?.votes || 0) + 1 }).eq('id', id);
+      } catch (e) {
+        console.error("Vote persistence error:", e);
+      }
     }
   };
 
@@ -157,8 +171,10 @@ const App: React.FC = () => {
 
   const handleSubmission = async (data: any) => {
     const newClipObj = { 
-      ...data, 
-      streamer_name: data.streamer || 'Unknown',
+      streamer_name: data.streamer_name || data.streamer || 'Unknown',
+      title: data.title,
+      video_url: data.video_url,
+      thumbnail: `https://picsum.photos/seed/${Math.random()}/400/225`,
       votes: 0, 
       tags: ['NEW'],
       user_id: user.id
@@ -166,9 +182,24 @@ const App: React.FC = () => {
 
     if (dbConnected) {
       const { data: inserted, error } = await supabase.from('clips').insert([newClipObj]).select();
-      if (!error && inserted) setClips([inserted[0] as any, ...clips]);
+      if (!error && inserted) {
+        const mapped = {
+          ...inserted[0],
+          streamerName: inserted[0].streamer_name,
+          videoUrl: inserted[0].video_url
+        };
+        setClips([mapped as any, ...clips]);
+      } else {
+        console.error("Submission Error:", error);
+      }
     } else {
-      setClips([{ ...newClipObj, id: Date.now().toString(), timestamp: 'just now' } as any, ...clips]);
+      setClips([{ 
+        ...newClipObj, 
+        id: Date.now().toString(), 
+        streamerName: newClipObj.streamer_name,
+        videoUrl: newClipObj.video_url,
+        timestamp: 'just now' 
+      } as any, ...clips]);
     }
     
     setView('feed');

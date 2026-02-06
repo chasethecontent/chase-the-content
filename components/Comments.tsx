@@ -29,12 +29,16 @@ const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected })
 
     fetchComments();
 
-    // Simple polling fallback or real-time sub if available
     const subscription = supabase
       .channel(`comments-${clipId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments', filter: `clip_id=eq.${clipId}` }, 
         payload => {
-          setComments(prev => [...prev, payload.new as Comment]);
+          const incoming = payload.new as Comment;
+          setComments(prev => {
+            // Avoid duplicates from optimistic updates
+            if (prev.some(c => c.id === incoming.id)) return prev;
+            return [...prev, incoming];
+          });
         }
       ).subscribe();
 
@@ -53,12 +57,26 @@ const Comments: React.FC<CommentsProps> = ({ clipId, currentUser, dbConnected })
       text: newComment
     };
 
+    // Optimistic local state update
+    const tempId = Math.random().toString();
+    const optimisticComment: Comment = { 
+      ...commentData, 
+      id: tempId, 
+      created_at: new Date().toISOString() 
+    } as Comment;
+    
+    setComments(prev => [...prev, optimisticComment]);
+
     if (dbConnected) {
-      const { error } = await supabase.from('comments').insert([commentData]);
-      if (error) console.error(error);
-    } else {
-      // Demo mode fallback
-      setComments(prev => [...prev, { ...commentData, id: Math.random().toString(), created_at: new Date().toISOString() }]);
+      const { data, error } = await supabase.from('comments').insert([commentData]).select();
+      if (error) {
+        console.error(error);
+        // Rollback optimistic update on error
+        setComments(prev => prev.filter(c => c.id !== tempId));
+      } else if (data) {
+        // Swap tempId with actual DB ID to prevent duplicates when real-time fires
+        setComments(prev => prev.map(c => c.id === tempId ? { ...c, id: data[0].id } : c));
+      }
     }
 
     setNewComment('');
